@@ -26,15 +26,6 @@ glm::vec3 cameraUp(0.0f, 1.0f, 0.0f);
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-// Player cube settings
-glm::vec3 playerPos(0.0f, 1.0f, 0.0f);
-glm::vec3 playerSize(0.5f, 0.5f, 0.5f);
-glm::vec3 playerSpeed(3.0f, 0.0f, 3.0f); // Horizontal movement speed
-float playerVelocityY = 0.0f; // Vertical velocity
-float gravity = -9.8f; // Gravity force
-float jumpStrength = 5.0f; // Jump strength
-bool isGrounded = false; // Check if the player is on the ground
-
 // mouse control
 float lastX = SCR_WIDTH / 2.0f;
 float lastY = SCR_HEIGHT / 2.0f;
@@ -46,10 +37,22 @@ bool firstMouse = true;
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void processInput(GLFWwindow* window);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
+void updateBallPhysics(float deltaTime, const std::vector<Cube>& cubes);
+std::vector<float> generateSphereVertices(float radius, unsigned int segments, unsigned int rings);
+std::vector<unsigned int> generateSphereIndices(unsigned int segments, unsigned int rings);
+
 //void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 
 // texture loading
 unsigned int loadTexture(const char* path);
+
+glm::vec3 ballPos(0.0f, 1.0f, 0.0f); // Ball position
+glm::vec3 ballVelocity(0.0f, 0.0f, 0.0f); // Ball velocity
+float ballRadius = 0.5f; // Ball radius
+float ballMass = 1.0f; // Ball mass
+float ballFriction = 0.95f; // Friction coefficient
+float ballBounce = 0.5f; // Bounce coefficient
+glm::vec3 gravityVec(0.0f, -9.8f, 0.0f); // Gravity
 
 
 int main() {
@@ -144,6 +147,7 @@ int main() {
     // Load texture
     unsigned int yellow = loadTexture("C:/Users/Drystan/Documents/project/yellow.jpg");
     unsigned int planks = loadTexture("C:/Users/Drystan/Documents/project/planks.jpg");
+    unsigned int white = loadTexture("C:/Users/Drystan/Documents/project/white.jpg");
 
     // Light source VAO
     unsigned int lightVAO;
@@ -154,12 +158,34 @@ int main() {
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
+    std::vector<float> sphereVertices = generateSphereVertices(ballRadius, 64, 64);
+    std::vector<unsigned int> sphereIndices = generateSphereIndices(64, 64);
+
+    unsigned int sphereVAO, sphereVBO, sphereEBO;
+    glGenVertexArrays(1, &sphereVAO);
+    glGenBuffers(1, &sphereVBO);
+    glGenBuffers(1, &sphereEBO);
+
+    glBindVertexArray(sphereVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, sphereVBO);
+    glBufferData(GL_ARRAY_BUFFER, sphereVertices.size() * sizeof(float), &sphereVertices[0], GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sphereEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphereIndices.size() * sizeof(unsigned int), &sphereIndices[0], GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0); // Position
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float))); // Normal
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float))); // Texture Coordinates
+    glEnableVertexAttribArray(2);
+
+
     std::vector<Cube> cubes = {
-        Cube(glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f), planks),
-        Cube(glm::vec3(1.0f, -1.0f, 0.0f), glm::vec3(1.0f, 1.0f, 1.0f), planks),
-        Cube(glm::vec3(0.0f, -1.0f, 1.0f), glm::vec3(1.0f, 1.0f, 1.0f), planks),
-        Cube(glm::vec3(1.0f, -1.0f, 1.0f), glm::vec3(1.0f, 1.0f, 1.0f), planks)
+        Cube(glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(10.0f, 0.5f, 10.0f), planks),
     };
+
 
 // Render loop
     while (!glfwWindowShouldClose(window)) {
@@ -177,7 +203,7 @@ int main() {
 
         cubeShader.use();
         cubeShader.setVec3("lightPos", glm::vec3(sin(currentFrame) * 2.0f, 2.0f, 0.0f)); // Hard light position
-        cubeShader.setVec3("lightColor", glm::vec3(1.0f, 0.8f, 0.6f)); // Warm light color (like yellowish light)
+        cubeShader.setVec3("lightColor", glm::vec3(1.0f, 1.0f, 1.0f)); // Light emit colour
         cubeShader.setVec3("viewPos", cameraPos); // Camera position
 
         glm::mat4 projection = glm::perspective(glm::radians(45.0f), (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
@@ -191,7 +217,16 @@ int main() {
         for (const Cube& cube : cubes) {
             cube.render(cubeShader, cubeVAO);
         }
+        updateBallPhysics(deltaTime, cubes);
+        
+        cubeShader.use();
+        glm::mat4 ballModel = glm::mat4(1.0f);
+        ballModel = glm::translate(ballModel, ballPos);
+        cubeShader.setMat4("model", ballModel);
 
+        glBindVertexArray(sphereVAO);
+        glBindTexture(GL_TEXTURE_2D, white);
+        glDrawElements(GL_TRIANGLES, sphereIndices.size(), GL_UNSIGNED_INT, 0);
 
         // Light source rendering
         lightShader.use();
@@ -201,7 +236,7 @@ int main() {
         // Oscillating light position using sin function
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(sin(currentFrame) * 2.0f, 2.0f, 0.0f)); // Moves left-right along X-axis
-        model = glm::scale(model, glm::vec3(0.2f));
+        model = glm::scale(model, glm::vec3(0.5f));
         lightShader.setMat4("model", model);
 
         glBindVertexArray(lightVAO);
@@ -227,6 +262,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
 
 void processInput(GLFWwindow* window) {
     float cameraSpeed = 2.5f * deltaTime;
+
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
         cameraPos += cameraSpeed * cameraFront;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
@@ -235,6 +271,15 @@ void processInput(GLFWwindow* window) {
         cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
         cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+
+    if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+        ballVelocity.z -= 25.0f * deltaTime;
+    if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+        ballVelocity.z += 25.0f * deltaTime;
+    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+        ballVelocity.x -= 25.0f * deltaTime;
+    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+        ballVelocity.x += 25.0f * deltaTime;
 
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
@@ -248,7 +293,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     }
 
     float xoffset = xpos - lastX;
-    float yoffset = lastY - ypos; // Reversed since y-coordinates go from bottom to top
+    float yoffset = lastY - ypos;
     lastX = xpos;
     lastY = ypos;
 
@@ -270,7 +315,6 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
     cameraFront = glm::normalize(front);
 }
-
 
 GLuint loadTexture(const char* filename)
 {
@@ -298,6 +342,82 @@ GLuint loadTexture(const char* filename)
 
     return texture;
 }
+
+void updateBallPhysics(float deltaTime, const std::vector<Cube>& cubes) {
+    // Apply gravity
+    ballVelocity += gravityVec * deltaTime;
+
+    // Update position
+    ballPos += ballVelocity * deltaTime;
+
+    // Check for collisions with baseplate
+    for (const Cube& cube : cubes) {
+        glm::vec3 cubeMin = cube.position - cube.scale * 0.5f;
+        glm::vec3 cubeMax = cube.position + cube.scale * 0.5f;
+
+        if (ballPos.x + ballRadius > cubeMin.x && ballPos.x - ballRadius < cubeMax.x &&
+            ballPos.y - ballRadius < cubeMax.y && ballPos.y + ballRadius > cubeMin.y &&
+            ballPos.z + ballRadius > cubeMin.z && ballPos.z - ballRadius < cubeMax.z) {
+            ballVelocity.y *= -ballBounce;
+            ballPos.y = cubeMax.y + ballRadius; // Reset position to surface
+        }
+    }
+
+    // Apply friction
+    ballVelocity.x *= (1.0f - ballFriction * deltaTime);
+    ballVelocity.z *= (1.0f - ballFriction * deltaTime);
+
+
+    // Stop very small movements
+    if (glm::length(ballVelocity) < 0.01f) {
+        ballVelocity = glm::vec3(0.0f);
+    }
+}
+
+std::vector<float> generateSphereVertices(float radius, unsigned int segments, unsigned int rings) {
+    std::vector<float> vertices;
+    for (unsigned int y = 0; y <= rings; ++y) {
+        for (unsigned int x = 0; x <= segments; ++x) {
+            float xSegment = (float)x / (float)segments;
+            float ySegment = (float)y / (float)rings;
+            float xPos = radius * cos(xSegment * 2.0f * glm::pi<float>()) * sin(ySegment * glm::pi<float>());
+            float yPos = radius * cos(ySegment * glm::pi<float>());
+            float zPos = radius * sin(xSegment * 2.0f * glm::pi<float>()) * sin(ySegment * glm::pi<float>());
+
+            // Add position
+            vertices.push_back(xPos);
+            vertices.push_back(yPos);
+            vertices.push_back(zPos);
+
+            // Add normal
+            vertices.push_back(xPos / radius);
+            vertices.push_back(yPos / radius);
+            vertices.push_back(zPos / radius);
+
+            // Add texture coordinates
+            vertices.push_back(xSegment);
+            vertices.push_back(ySegment);
+        }
+    }
+    return vertices;
+}
+std::vector<unsigned int> generateSphereIndices(unsigned int segments, unsigned int rings) {
+    std::vector<unsigned int> indices;
+    for (unsigned int y = 0; y < rings; ++y) {
+        for (unsigned int x = 0; x < segments; ++x) {
+            indices.push_back((y + 1) * (segments + 1) + x);
+            indices.push_back(y * (segments + 1) + x + 1);
+            indices.push_back(y * (segments + 1) + x);
+
+            indices.push_back((y + 1) * (segments + 1) + x);
+            indices.push_back((y + 1) * (segments + 1) + x + 1);
+            indices.push_back(y * (segments + 1) + x + 1);
+        }
+    }
+    return indices;
+}
+
+
 
 
 
