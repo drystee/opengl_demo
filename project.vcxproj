@@ -144,8 +144,11 @@
   <ItemGroup>
     <Image Include="file.jpg" />
     <Image Include="grass.jpg" />
+    <Image Include="grass_side.jpg" />
+    <Image Include="grass_top.jpg" />
     <Image Include="include\file.jpg" />
     <Image Include="planks.jpg" />
+    <Image Include="stone.jpg" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shader.fs" />

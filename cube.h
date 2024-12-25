@@ -29,7 +29,7 @@ public:
         // Bind the cube's texture
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, textureID);
-
+    
         // Set the model matrix
         glm::mat4 model = glm::mat4(1.0f);
         model = glm::translate(model, position);
@@ -39,6 +39,7 @@ public:
 
         // Render the cube
         glBindVertexArray(VAO);
+        
         glDrawArrays(GL_TRIANGLES, 0, 36);
     }
 };

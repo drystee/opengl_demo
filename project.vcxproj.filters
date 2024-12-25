@@ -46,6 +46,15 @@
     <Image Include="planks.jpg">
       <Filter>Resource Files</Filter>
     </Image>
+    <Image Include="grass_side.jpg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="grass_top.jpg">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="stone.jpg">
+      <Filter>Resource Files</Filter>
+    </Image>
   </ItemGroup>
   <ItemGroup>
     <None Include="shader.fs" />
